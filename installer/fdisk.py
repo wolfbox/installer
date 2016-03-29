@@ -199,7 +199,9 @@ class PartitionEditor:
         self.disk_name = disk_name
 
     def clear_disk(self):
-        self._fdisk(['-ig'])
+        # The OpenBSD installer suggests the boot partition to be >960 blocks.
+        # We choose twice that for safety.
+        self._fdisk(['-y', '-b', '1920', '-ig'])
 
     def _fdisk(self, options: List[str]):
         return subprocess.check_output(['/sbin/fdisk', '-y'] + options + [self.disk_name])

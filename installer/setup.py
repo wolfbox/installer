@@ -8,6 +8,7 @@ import os.path
 import urllib.error
 import logging
 
+import bootloader
 import fdisk
 import ftplist
 import timezone
@@ -83,6 +84,9 @@ def main() -> None:
     with open(os.path.join(ROOT, 'etc/hosts'), 'a') as f:
         f.write('127.0.0.1\tlocalhost\n')
         f.write('::1\t\tlocalhost\n')
+
+    logger.info('Writing bootloader')
+    bootloader.cmdline(disk, ROOT)
 
 if __name__ == '__main__':
     main()
