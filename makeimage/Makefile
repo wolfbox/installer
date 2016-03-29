@@ -1,4 +1,4 @@
-MIRROR=ftp://ftp5.usa.openbsd.org/pub/OpenBSD/snapshots/amd64
+MIRROR=ftp://ftp5.usa.openbsd.org/pub/OpenBSD/5.9/amd64
 ARCHIVES=base59.tgz man59.tgz xbase59.tgz xfont59.tgz xserv59.tgz xshare59.tgz comp59.tgz
 
 FONTCONFIG_CONFIGS=configs/20-hinting-slight.conf \
