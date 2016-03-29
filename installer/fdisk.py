@@ -33,7 +33,7 @@ def mount_disk(label: 'Label', root: str) -> None:
 
 def format_disk(label: 'Label') -> None:
     subprocess.call(['/sbin/umount', label.block_path])
-    subprocess.check_call(['/sbin/newfs', '-O1', label.device_path])
+    subprocess.check_call(['/sbin/newfs', label.device_path])
     label.filesystem = 'ffs'
 
 
