@@ -18,6 +18,10 @@ def sysctl(name: str) -> str:
     return str(subprocess.check_output(['sysctl', '-n', name]), 'utf-8')
 
 
+def disklabel(disk_name: str, options: List[str]) -> bytes:
+    return subprocess.check_output(['/sbin/disklabel'] + options + [disk_name])
+
+
 def mount_disk(label: 'Label', root: str) -> None:
     # Mount softdep to speed up install significantly. Should be safe;
     # the OpenBSD installer mounts *async* after all.
@@ -29,7 +33,7 @@ def mount_disk(label: 'Label', root: str) -> None:
 
 def format_disk(label: 'Label') -> None:
     subprocess.call(['/sbin/umount', label.block_path])
-    subprocess.check_call(['/sbin/newfs', '-O2', label.device_path])
+    subprocess.check_call(['/sbin/newfs', '-O1', label.device_path])
     label.filesystem = 'ffs'
 
 
@@ -58,16 +62,31 @@ class DiskInfo:
     def duid(self) -> str:
         return self.data['duid']
 
+    def refresh(self) -> None:
+        new_info = self.load(self.device_node)
+        self.device_node = new_info.device_node
+        self.data = new_info.data
+
+    @classmethod
+    def load(cls, disk_name: str) -> 'DiskInfo':
+        output = str(disklabel(disk_name, []), 'utf-8')
+        parsed = re.finditer(r'^([\S ]+): ([^\n]+)$', output, re.MULTILINE)
+        data = {}
+        for group in parsed:
+            data[group.group(1)] = group.group(2)
+
+        return DiskInfo(disk_name, data)
+
 
 class Label:
     def __init__(self,
                  mountpoint: str,
-                 duid: str,
+                 diskinfo: DiskInfo,
                  disk_name: str,
                  partition_letter: str,
                  options=None) -> None:
         self.mountpoint = mountpoint
-        self.duid = duid
+        self.diskinfo = diskinfo
         self.disk_name = disk_name
         self.partition_letter = partition_letter
         self.filesystem = None
@@ -83,35 +102,43 @@ class Label:
             # If you really need atime, you can set that up yourself.
             self.add_option('noatime')
 
-    def add_option(self, option: str):
+    def add_option(self, option: str) -> None:
         self.options.add(option)
 
     @property
-    def relmountpoint(self):
+    def passno(self) -> int:
+        return 1 if self.mountpoint == '/' else 2
+
+    @property
+    def relmountpoint(self) -> str:
         return self.mountpoint.lstrip('/')
 
     @property
-    def block_path(self):
+    def block_path(self) -> str:
         return '/dev/{}{}'.format(self.disk_name, self.partition_letter)
 
     @property
-    def device_path(self):
+    def device_path(self) -> str:
         return '/dev/r{}{}'.format(self.disk_name, self.partition_letter)
 
-    def to_fstab(self):
+    def to_fstab(self) -> str:
         if not self.filesystem:
             return ''
 
-        return '{}.{} {} {} {} 1 1'.format(self.duid,
-                                           self.partition_letter,
-                                           self.mountpoint,
-                                           self.filesystem,
-                                           ','.join(self.options))
+        stanza = '{}.{} {} {} {}'.format(self.diskinfo.duid,
+                                         self.partition_letter,
+                                         self.mountpoint,
+                                         self.filesystem,
+                                         ','.join(self.options))
+        if self.mountpoint != 'swap':
+            stanza += ' 1 {}'.format(self.passno)
 
-    def __repr__(self):
+        return stanza
+
+    def __repr__(self) -> str:
         return '{}({}, {}, {}, {}, {})'.format(self.__class__.__name__,
                                                self.mountpoint,
-                                               self.duid,
+                                               self.diskinfo.duid,
                                                self.disk_name,
                                                self.partition_letter,
                                                list(self.options))
@@ -150,18 +177,18 @@ class LabelEditor:
             raise ValueError(disk_name)
 
         self.disk_name = disk_name
-        self.diskinfo = self._get_diskinfo()
+        self.diskinfo = DiskInfo.load(self.disk_name)
 
     def autolabel(self, template: List[LabelDefinition]):
         template_string = '\n'.join([x.to_line() for x in template])
         with tempfile.NamedTemporaryFile(mode='wb+') as template_file:
             template_file.write(bytes(template_string, 'utf-8'))
             template_file.flush()
-            self._disklabel(['-A', '-w', '-T', template_file.name])
+            disklabel(self.disk_name, ['-A', '-w', '-T', template_file.name])
 
         letters = ['a', 'b', 'd', 'e', 'f', 'g', 'h']
         labels = [Label(l.mountpoint,
-                        self.diskinfo.duid,
+                        self.diskinfo,
                         self.disk_name,
                         letters[template.index(l)],
                         l.options)
@@ -176,19 +203,8 @@ class LabelEditor:
 
             format_disk(label)
 
+        self.diskinfo.refresh()
         return labels
-
-    def _get_diskinfo(self):
-        output = str(self._disklabel([]), 'utf-8')
-        parsed = re.finditer(r'^([\S ]+): ([^\n]+)$', output, re.MULTILINE)
-        data = {}
-        for group in parsed:
-            data[group.group(1)] = group.group(2)
-
-        return DiskInfo(self.disk_name, data)
-
-    def _disklabel(self, options: List[str]):
-        return subprocess.check_output(['/sbin/disklabel'] + options + [self.disk_name])
 
 
 class PartitionEditor:
@@ -224,9 +240,9 @@ def main(disk: str):
 
     ramsize = int(sysctl('hw.physmem'))
     label_definitions = [
-        LabelDefinition('/', ('1G', '*'), 0),
+        LabelDefinition('/', ('1G', '*'), 0, ['rw']),
         LabelDefinition('swap',
                         ('100M', '{}M'.format(math.ceil(ramsize / 1024 / 1024))),
                         10),
-        LabelDefinition('/var', ('500M', '*'), 90, ['nosuid', 'nodev'])]
+        LabelDefinition('/var', ('500M', '*'), 90, ['rw', 'nosuid', 'nodev'])]
     return label_editor.autolabel(label_definitions)

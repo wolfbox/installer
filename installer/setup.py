@@ -27,6 +27,14 @@ def in_dir(path: str):
     os.chdir(orig_path)
 
 
+def dd(inpath: str, outpath: str, count: int, bs: int) -> None:
+    subprocess.check_call(['/bin/dd',
+                           'if={0}'.format(inpath),
+                           'of={0}'.format(outpath),
+                           'bs={0}'.format(bs),
+                           'count={0}'.format(count)])
+
+
 def main() -> None:
     subprocess.call(['/sbin/umount', '-af'])
 
@@ -63,7 +71,7 @@ def main() -> None:
 
     logger.info('Creating fstab')
     with open(os.path.join(ROOT, 'etc', 'fstab'), 'w') as fstab:
-        fstab.write('\n'.join([f.to_fstab() for f in labels]))
+        fstab.write('\n'.join([f.to_fstab() for f in labels]) + '\n')
 
     logger.info('Getting ftplist information')
     ftplist_info = ftplist.FtpList.empty()
@@ -84,6 +92,15 @@ def main() -> None:
     with open(os.path.join(ROOT, 'etc/hosts'), 'a') as f:
         f.write('127.0.0.1\tlocalhost\n')
         f.write('::1\t\tlocalhost\n')
+
+    dd(inpath='/dev/random',
+       outpath=os.path.join(ROOT, 'etc/random.seed'),
+       bs=512,
+       count=1)
+    dd(inpath='/dev/random',
+       outpath=os.path.join(ROOT, 'var/db/host.random'),
+       bs=65536,
+       count=1)
 
     logger.info('Writing bootloader')
     bootloader.cmdline(disk, ROOT)
