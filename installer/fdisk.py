@@ -159,7 +159,7 @@ class LabelEditor:
             template_file.flush()
             self._disklabel(['-A', '-w', '-T', template_file.name])
 
-        letters = ['a', 'b', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l']
+        letters = ['a', 'b', 'd', 'e', 'f', 'g', 'h']
         labels = [Label(l.mountpoint,
                         self.diskinfo.duid,
                         self.disk_name,
