@@ -35,7 +35,10 @@ build/.system-built:
 	rm -rf build
 	mkdir build
 	doas rm -rf /usr/obj/*
-	cd /usr/src && git reset --hard && doas git clean -xfd && make obj
+	cd /usr/src && git reset --hard && doas git clean -xfd
+	PATCH_DIR=`pwd`/src/patches && \
+	    for p in "$$PATCH_DIR"/*.patch; do patch -d /usr -p1 -i "$$p"; done
+	cd /usr/src && make obj
 	cd /usr/src/etc && doas env DESTDIR=/ make distrib-dirs
 	cd /usr/src && make build -j${MAKE_JOBS}
 	touch $@
