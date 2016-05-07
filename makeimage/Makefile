@@ -1,39 +1,60 @@
-MIRROR=ftp://ftp5.usa.openbsd.org/pub/OpenBSD/5.9/amd64
-ARCHIVES=base59.tgz man59.tgz xbase59.tgz xfont59.tgz xserv59.tgz xshare59.tgz comp59.tgz
+MAKE_JOBS:=`sysctl -n hw.ncpufound`
+VERSION=59
+DESTDIR=/usr/dest
+RELEASEDIR=/usr/rel
+BASE_SETS=$(RELEASEDIR)/base$(VERSION).tgz \
+          $(RELEASEDIR)/man$(VERSION).tgz \
+          $(RELEASEDIR)/comp$(VERSION).tgz
+XENOCARA_SETS=$(RELEASEDIR)/xbase$(VERSION).tgz \
+              $(RELEASEDIR)/xfont$(VERSION).tgz \
+              $(RELEASEDIR)/xserv$(VERSION).tgz \
+              $(RELEASEDIR)/xshare$(VERSION).tgz
 
-FONTCONFIG_CONFIGS=configs/20-hinting-slight.conf \
-                   configs/20-monospace-lcd-filter.conf
+FONTCONFIG_CONFIGS=src/configs/20-hinting-slight.conf \
+                   src/configs/20-monospace-lcd-filter.conf
 
 .PHONY: clean
 
-image.tar.gz: root
-	cd root && tar -czf ../$@ .
+all: build/root.tar.xz
 
-root: $(ARCHIVES) bsd.mp bsd.rd SHA256.sig
-	signify -C -p /etc/signify/openbsd-59-base.pub -x SHA256.sig -q || true
+build/root.tar.xz: $(BASE_SETS) $(XENOCARA_SETS) $(FONTCONFIG_CONFIGS)
+	doas rm -rf build/root
+	mkdir build/root
+	for tarball in $(RELEASEDIR)/*.tgz; do doas tar -C build/root -xzf "$$tarball"; done
+	for kern in bsd.rd bsd.mp; do doas install -g wheel -m644 $(RELEASEDIR)/$$kern ./build/root/; done
+	doas ln build/root/bsd.mp build/root/bsd
+	doas install -m644 -g bin $(FONTCONFIG_CONFIGS) build/root/etc/fonts/conf.avail/
+	for conf in $(FONTCONFIG_CONFIGS); do \
+	    conf=`basename $$conf` \
+	    doas ln -s ../conf.avail/$$conf build/root/etc/fonts/conf.d; done
+	doas install -m644 -g wheel src/profile build/root/etc/
 
-	if [ `id -u` != 0 ]; then echo "Must extract as root"; false; fi
-	rm -rf root
-	mkdir root
-	cd root && for a in $(ARCHIVES); do tar xpzf ../$$a; done
+	doas tar -C build/root -cf - . | xz > $@
 
-	# Install our kernels
-	install -m644 -o root -g wheel bsd.rd root/
-	install -m644 -o root -g wheel bsd.mp root/bsd
+build/.system-built:
+	rm -rf build
+	mkdir build
+	doas rm -rf /usr/obj/*
+	cd /usr/src && git reset --hard && doas git clean -xfd && make obj
+	cd /usr/src/etc && doas env DESTDIR=/ make distrib-dirs
+	cd /usr/src && make build -j${MAKE_JOBS}
+	touch $@
 
-	# Put in our own config files
-	install -m644 -g bin $(FONTCONFIG_CONFIGS) root/etc/fonts/conf.avail/
-	install -m644 -g bin $(FONTCONFIG_CONFIGS) root/etc/fonts/conf.d/
-	install -m644 -g wheel profile root/etc/
+$(BASE_SETS): build/.system-built
+	export DESTDIR="${DESTDIR}" RELEASEDIR="${RELEASEDIR}" && \
+	    doas rm -rf "${DESTDIR}" "${RELEASEDIR}" && \
+	    doas mkdir -p "${DESTDIR}" "${RELEASEDIR}" && \
+	    cd /usr/src/etc && doas make release && \
+	    cd /usr/src/distrib/sets && doas sh checkflist
 
-	# Set up for our read-only root
-	cd root && mv home var/ && ln -s var/home home
-	cd root/usr && mkdir ../var/usr && mv local ../var/usr && ln -s ../var/usr/local local
-	cd root && rm var/tmp && mv tmp var/ && ln -s var/tmp tmp
+build/.xenocara-built: build/.system-built
+	doas rm -rf /usr/xobj/*
+	cd /usr/xenocara && make bootstrap && make obj && make build -j${MAKE_JOBS}
+	touch $@
 
-$(ARCHIVES) bsd.mp bsd.rd SHA256.sig:
-	if [ `id -u` = 0 ]; then echo "Don't download as root"; false; fi
-	ftp $(MIRROR)/$@
+$(XENOCARA_SETS): build/.xenocara-built
+	export DESTDIR="${DESTDIR}" RELEASEDIR="${RELEASEDIR}" && \
+	    cd /usr/xenocara && doas make release
 
 clean:
-	rm -rf root
+	rm -fr build/* build/.*
