@@ -17,7 +17,10 @@ FONTCONFIG_CONFIGS=src/configs/20-hinting-slight.conf \
 
 all: build/root.tar.xz
 
-build/root.tar.xz: $(BASE_SETS) $(XENOCARA_SETS) $(FONTCONFIG_CONFIGS)
+build/root.tar.xz: build/root.tar
+	xz -k build/root.tar
+
+build/root.tar: $(BASE_SETS) $(XENOCARA_SETS) $(FONTCONFIG_CONFIGS)
 	doas rm -rf build/root
 	mkdir build/root
 	for tarball in $(RELEASEDIR)/*.tgz; do doas tar -C build/root -xzf "$$tarball"; done
@@ -29,7 +32,7 @@ build/root.tar.xz: $(BASE_SETS) $(XENOCARA_SETS) $(FONTCONFIG_CONFIGS)
 	    doas ln -s ../conf.avail/$$conf build/root/etc/fonts/conf.d; done
 	doas install -m644 -g wheel src/profile build/root/etc/
 
-	doas tar -C build/root -cf - . | xz > $@
+	doas tar -C build/root -cf $@ .
 
 build/.system-built:
 	rm -rf build
