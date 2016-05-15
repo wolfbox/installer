@@ -117,7 +117,6 @@ sub configure_hostname {
     my $fh = IO::File->new('/mnt/etc/myname', 'w')
         or die "Failed to open '/mnt/etc/myname': $!";
     print $fh "$hostname\n";
-    close $fh;
     return;
 }
 
@@ -221,7 +220,7 @@ sub unlock_installer {
 }
 
 local $SIG{INT} = sub { unlock_installer(); die "Caught sigint"; };
-$SIG{TERM} = sub { unlock_installer(); die "Caught sigterm"; };
+local $SIG{TERM} = sub { unlock_installer(); die "Caught sigterm"; };
 
 lock_installer();
 eval { main(); }; warn $@ if $@;
