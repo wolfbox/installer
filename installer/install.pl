@@ -36,11 +36,12 @@ sub list_disks {
 }
 
 sub list_ifaces {
-
+    return;
 }
 
 sub umount_disk {
     `umount /mnt/var /mnt 2>&1`;
+    return;
 }
 
 sub setup_disk {
@@ -85,6 +86,7 @@ sub mount_disk {
     run("mount -o async '$duid.a' /mnt");
     mkdir "/mnt/var" or die;
     run("mount -o async '$duid.d' /mnt/var");
+    return;
 }
 
 # extract_image(image_path)
@@ -107,29 +109,34 @@ sub extract_image {
 
     # Set up initial doas rule
     run("echo 'permit keepenv :wheel as root' > /mnt/etc/doas.conf");
+    return;
 }
 
 sub configure_hostname {
     my ($hostname) = @_;
-    open(my $fh, '>:encoding(UTF-8)', '/mnt/etc/myname')
+    my $fh = IO::File->new('/mnt/etc/myname', 'w')
         or die "Failed to open '/mnt/etc/myname': $!";
     print $fh "$hostname\n";
+    close $fh;
+    return;
 }
 
 sub configure_timezone {
     my ($tz) = @_;
     unlink('/mnt/etc/localtime');
     symlink("/usr/share/zoneinfo/$tz", '/mnt/etc/localtime') or die "Failed to set timezone: $!";
+    return;
 }
 
 sub configure_mirrors {
     my (@mirrors) = @_;
 
     my @stanzas = map { "installpath+=$_" } @mirrors;
-    open(my $fh, '>:encoding(UTF-8)', '/mnt/etc/pkg.conf')
+    my $fh = IO::File->new('/mnt/etc/pkg.conf', 'w')
         or die "Failed to open '/mnt/etc/pkg.conf': $!";
     print $fh join('\n', @stanzas);
     print $fh '\n';
+    return;
 }
 
 sub configure {
@@ -141,12 +148,13 @@ sub configure {
     run("echo 'machdep.allowaperture=1' > /mnt/etc/sysctl.conf");
     run("printf '127.0.0.1\tlocalhost\n::1\t\tlocalhost\n' > /mnt/etc/hosts");
 
-    open(my $fstab_fh, '>:encoding(UTF-8)', '/mnt/etc/fstab')
+    my $fstab_fh = IO::File->new('/mnt/etc/fstab', 'w')
         or die "Failed to open '/mnt/etc/fstab': $!";
     print $fstab_fh join('\n', @fstab);
     print $fstab_fh '\n';
 
     run("/usr/sbin/installboot -r /mnt '$duid'");
+    return;
 }
 
 sub create_user {
@@ -159,6 +167,7 @@ sub create_user {
     my $gecos = "$fullname,,,";
     run("/usr/sbin/chroot /mnt /usr/sbin/useradd -m -k /etc/skel -c gecos -s /bin/ksh -G wheel '$username'");
     run("/usr/sbin/chroot /mnt /usr/bin/passwd '$username'");
+    return;
 }
 
 sub main {
@@ -169,20 +178,20 @@ sub main {
     until(grep {$_ eq $disk} @disks) {
         print "Disks: $str_disks\n";
         print 'Disk: ';
-        $disk = <STDIN>;
+        $disk = <>;
         chomp $disk;
     }
 
     print 'Hostname: ';
-    my $hostname = <STDIN>;
+    my $hostname = <>;
     chomp $hostname;
 
     print 'Username: ';
-    my $username = <STDIN>;
+    my $username = <>;
     chomp $username;
 
     print 'Full Name: ';
-    my $fullname = <STDIN>;
+    my $fullname = <>;
     chomp $fullname;
 
     my %ftplist = get_ftplist('http://129.128.5.191/cgi-bin/ftplist.cgi');
@@ -198,19 +207,22 @@ sub main {
     create_user($username, $fullname);
 
     umount_disk();
+    return;
 }
 
-sub lock {
+sub lock_installer {
     IO::File->new("/tmp/installer.lock", O_CREAT|O_EXCL) or die "Failed to lock";
+    return;
 }
 
-sub unlock {
+sub unlock_installer {
     unlink("/tmp/installer.lock");
+    return;
 }
 
-$SIG{INT} = sub { unlock(); die "Caught sigint"; };
-$SIG{TERM} = sub { unlock(); die "Caught sigterm"; };
+local $SIG{INT} = sub { unlock_installer(); die "Caught sigint"; };
+$SIG{TERM} = sub { unlock_installer(); die "Caught sigterm"; };
 
-lock();
+lock_installer();
 eval { main(); }; warn $@ if $@;
-unlock();
+unlock_installer();
