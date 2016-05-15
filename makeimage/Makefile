@@ -19,6 +19,7 @@ all: build/root.tar.xz
 
 build/root.tar.xz: build/root.tar
 	xz -k build/root.tar
+	rm -f build/root.tar
 
 build/root.tar: $(BASE_SETS) $(XENOCARA_SETS) $(FONTCONFIG_CONFIGS)
 	doas rm -rf build/root
